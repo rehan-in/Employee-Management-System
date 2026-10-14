@@ -11,22 +11,95 @@ let dbType = 'mysql';
 
 async function initDB() {
   try {
-    // Attempt MySQL Connection Pool
-    const pool = mysql.createPool({
+    // =========================================================================
+    // Step 1: Bootstrap connection to MySQL Server (without database selected)
+    // Ensures the target database exists or creates it if not already present.
+    // =========================================================================
+    const bootstrapConn = await mysql.createConnection({
       host: process.env.DB_HOST || 'localhost',
-      port: process.env.DB_PORT || 3306,
+      port: parseInt(process.env.DB_PORT || '3306', 10),
       user: process.env.DB_USER || 'root',
       password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'employee_db',
+      connectTimeout: 5000
+    });
+
+    const targetDbName = process.env.DB_NAME || 'employee_db';
+    // Create database if not exists
+    await bootstrapConn.query(`CREATE DATABASE IF NOT EXISTS \`${targetDbName}\``);
+    await bootstrapConn.end();
+
+    // =========================================================================
+    // Step 2: Initialize MySQL Connection Pool targeting the database
+    // =========================================================================
+    const pool = mysql.createPool({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '3306', 10),
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: targetDbName,
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0
     });
 
-    // Test connection
+    // Test connection from pool
     const connection = await pool.getConnection();
     connection.release();
-    console.log(`[Database] Connected to MySQL database (${process.env.DB_NAME}) on ${process.env.DB_HOST}:${process.env.DB_PORT}`);
+
+    // =========================================================================
+    // Step 3: Ensure tables and seed data exist in MySQL
+    // =========================================================================
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(150) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS departments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        department_name VARCHAR(100) NOT NULL UNIQUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS employees (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(150) NOT NULL UNIQUE,
+        phone VARCHAR(15) NOT NULL,
+        salary DECIMAL(12, 2) NOT NULL,
+        department_id INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_employee_department FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE RESTRICT ON UPDATE CASCADE
+      )
+    `);
+
+    // Seed initial Admin User if users table is empty
+    const [usersCount] = await pool.query('SELECT COUNT(*) as count FROM users');
+    if (usersCount[0].count === 0) {
+      const hashedPassword = await bcrypt.hash('Admin@123', 10);
+      await pool.execute(
+        'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+        ['Admin User', 'admin@company.com', hashedPassword]
+      );
+    }
+
+    // Seed default departments if departments table is empty
+    const [deptsCount] = await pool.query('SELECT COUNT(*) as count FROM departments');
+    if (deptsCount[0].count === 0) {
+      const depts = ['Engineering', 'Human Resources', 'Finance', 'Marketing', 'Operations'];
+      for (const d of depts) {
+        await pool.execute('INSERT INTO departments (department_name) VALUES (?)', [d]);
+      }
+    }
+
+    console.log(`[Database] Successfully connected to MySQL database (${targetDbName}) on ${process.env.DB_HOST}:${process.env.DB_PORT}`);
     
     dbType = 'mysql';
     dbClient = {
@@ -111,13 +184,14 @@ async function initDB() {
 
     const empCount = await runSqlite(`SELECT COUNT(*) as count FROM employees`);
     if (empCount[0].count === 0) {
+      // Seed initial employees with phone numbers formatted as digits only (optional leading +)
       const emps = [
-        ['Alice Johnson', 'alice.j@company.com', '+1-555-0101', 95000.00, 1],
-        ['Bob Smith', 'bob.s@company.com', '+1-555-0102', 65000.00, 2],
-        ['Charlie Davis', 'charlie.d@company.com', '+1-555-0103', 88000.00, 3],
-        ['Diana Prince', 'diana.p@company.com', '+1-555-0104', 110000.00, 1],
-        ['Ethan Hunt', 'ethan.h@company.com', '+1-555-0105', 72000.00, 4],
-        ['Fiona Gallagher', 'fiona.g@company.com', '+1-555-0106', 82000.00, 5]
+        ['Alice Johnson', 'alice.j@company.com', '+15550101001', 95000.00, 1],
+        ['Bob Smith', 'bob.s@company.com', '+15550101002', 65000.00, 2],
+        ['Charlie Davis', 'charlie.d@company.com', '+15550101003', 88000.00, 3],
+        ['Diana Prince', 'diana.p@company.com', '+15550101004', 110000.00, 1],
+        ['Ethan Hunt', 'ethan.h@company.com', '+15550101005', 72000.00, 4],
+        ['Fiona Gallagher', 'fiona.g@company.com', '+15550101006', 82000.00, 5]
       ];
       for (const emp of emps) {
         await runSqlite(

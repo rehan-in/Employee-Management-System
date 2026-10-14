@@ -70,6 +70,18 @@ const createEmployee = async (req, res) => {
       return res.status(400).json({ error: 'All fields (name, email, phone, salary, department_id) are required.' });
     }
 
+    // =========================================================================
+    // Phone Validation: Disallow characters in phone number
+    // =========================================================================
+    // Enforce that phone number contains only numeric digits (10 to 15 digits)
+    // with an optional leading '+'. No alphabetic characters or special symbols are allowed.
+    const phoneRegex = /^\+?[0-9]{10,15}$/;
+    if (!phoneRegex.test(phone.toString().trim())) {
+      return res.status(400).json({
+        error: 'Invalid phone number format. Phone number must only contain numbers (10 to 15 digits, optional leading +) and cannot contain characters.'
+      });
+    }
+
     const db = await getDB();
 
     // Verify department exists
@@ -114,6 +126,18 @@ const updateEmployee = async (req, res) => {
 
     if (!name || !email || !phone || !salary || !department_id) {
       return res.status(400).json({ error: 'All fields (name, email, phone, salary, department_id) are required.' });
+    }
+
+    // =========================================================================
+    // Phone Validation: Disallow characters in phone number
+    // =========================================================================
+    // Enforce that phone number contains only numeric digits (10 to 15 digits)
+    // with an optional leading '+'. No alphabetic characters or special symbols are allowed.
+    const phoneRegex = /^\+?[0-9]{10,15}$/;
+    if (!phoneRegex.test(phone.toString().trim())) {
+      return res.status(400).json({
+        error: 'Invalid phone number format. Phone number must only contain numbers (10 to 15 digits, optional leading +) and cannot contain characters.'
+      });
     }
 
     const db = await getDB();
